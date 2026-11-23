@@ -520,18 +520,8 @@ fn build_vrl_response(
                 format!("VRL response program failed: {err}"),
             )))
         }
-        Ok(Value::Bytes(body)) => {
-            let response = warp::http::Response::builder()
-                .status(default_status)
-                .body(body.into())
-                .map_err(|err| {
-                    warp::reject::custom(ErrorMessage::new(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        format!("Failed to build response: {err}"),
-                    ))
-                })?;
-            Ok(VrlResponseDecision::Forward(response))
-        }
+        Ok(Value::Bytes(body)) => forward_body(body, default_status),
+        Ok(Value::String(body)) => forward_body(body.as_bytes().clone(), default_status),
         Ok(Value::Object(obj)) => {
             let response = build_response_from_vrl_obj(&obj, default_status)?;
             Ok(VrlResponseDecision::Forward(response))
@@ -546,6 +536,20 @@ fn build_vrl_response(
             )))
         }
     }
+}
+
+/// Builds a forwarded response with `default_status` and a plain-string `body`.
+fn forward_body(body: Bytes, default_status: StatusCode) -> Result<VrlResponseDecision, Rejection> {
+    let response = warp::http::Response::builder()
+        .status(default_status)
+        .body(body.into())
+        .map_err(|err| {
+            warp::reject::custom(ErrorMessage::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to build response: {err}"),
+            ))
+        })?;
+    Ok(VrlResponseDecision::Forward(response))
 }
 
 /// Builds an HTTP response from a VRL `Value::Object` returned by the `response_source` program.
@@ -568,9 +572,10 @@ fn build_response_from_vrl_obj(
 
     let body = obj
         .get("body")
-        .map(|v| match v {
-            Value::Bytes(b) => b.clone(),
-            other => Bytes::from(other.to_string()),
+        .map(|v| {
+            v.as_bytes()
+                .cloned()
+                .unwrap_or_else(|| Bytes::from(v.to_string()))
         })
         .unwrap_or_default();
 
@@ -578,7 +583,7 @@ fn build_response_from_vrl_obj(
 
     if let Some(Value::Object(headers)) = obj.get("headers") {
         for (k, v) in headers {
-            if let Value::Bytes(v) = v {
+            if let Some(v) = v.as_bytes() {
                 insert_validated_header(&mut builder, k.as_str(), v.as_ref());
             }
         }
