@@ -452,15 +452,9 @@ impl OpentelemetryConfig {
         })
         .max_decoding_message_size(max_decompressed_size_bytes());
 
-        // Serve the standard `grpc.health.v1.Health` service, as the `vector` source does, so a
-        // health check on this port gets a real gRPC status instead of the bare HTTP 404 that an
-        // unrouted method returns. The reporter already reports the aggregate (empty) service name
-        // as serving, and that is the name a probe sends unless it is told otherwise.
-        let (health_reporter, health_service) = health_reporter();
-
         let mut builder = RoutesBuilder::default();
+        let report_serving = add_health_service(&mut builder);
         builder
-            .add_service(health_service)
             .add_service(log_service)
             .add_service(metrics_service)
             .add_service(trace_service);
@@ -474,23 +468,8 @@ impl OpentelemetryConfig {
             cx.shutdown.clone(),
             request_control.grpc_layer(grpc_error_response),
         );
-        let grpc_source = async move {
-            // Report each OTLP service by name as well, so a probe can target a single signal.
-            // The names come from the generated `NamedService` implementations because a
-            // hand-written string could drift from the routes registered above. This runs before
-            // the server binds, so a probe never sees the services as unknown.
-            for service_name in [
-                <LogsServiceServer<Service> as NamedService>::NAME,
-                <MetricsServiceServer<Service> as NamedService>::NAME,
-                <TraceServiceServer<Service> as NamedService>::NAME,
-            ] {
-                health_reporter
-                    .set_service_status(service_name, tonic_health::ServingStatus::Serving)
-                    .await;
-            }
-            grpc_server.await
-        }
-        .map_err(|error| {
+        // Report the services before the server binds, so a probe never sees them as unknown.
+        let grpc_source = report_serving.then(|()| grpc_server).map_err(|error| {
             error!(message = "OpenTelemetry source gRPC server failed.", %error);
         });
 
@@ -526,6 +505,30 @@ impl OpentelemetryConfig {
         });
 
         Ok(join(grpc_source, http_source).map(|_| Ok(())).boxed())
+    }
+}
+
+/// Serves the standard `grpc.health.v1.Health` service, as the `vector` source does, so a health
+/// check on this port gets a real gRPC status instead of the bare HTTP 404 that an unrouted method
+/// returns. The reporter already reports the aggregate (empty) service name as serving, and that
+/// is the name a probe sends unless it is told otherwise.
+///
+/// The returned future also reports each OTLP service by name as serving, so a probe can target a
+/// single signal. The names come from the generated `NamedService` implementations because a
+/// hand-written string could drift from the routes the source registers.
+fn add_health_service(builder: &mut RoutesBuilder) -> impl Future<Output = ()> + use<> {
+    let (health_reporter, health_service) = health_reporter();
+    builder.add_service(health_service);
+    async move {
+        for service_name in [
+            <LogsServiceServer<Service> as NamedService>::NAME,
+            <MetricsServiceServer<Service> as NamedService>::NAME,
+            <TraceServiceServer<Service> as NamedService>::NAME,
+        ] {
+            health_reporter
+                .set_service_status(service_name, tonic_health::ServingStatus::Serving)
+                .await;
+        }
     }
 }
 
