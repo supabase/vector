@@ -15,6 +15,15 @@ const VRL_REPO_URL: &str = "https://github.com/vectordotdev/vrl.git";
 const VECTOR_REPO_URL: &str = "https://github.com/vectordotdev/vector.git";
 const VRL_PACKAGE_NAME: &str = "vrl";
 
+/// Repository to fetch `--vector-sha` from. In GitHub Actions this is the repository the workflow
+/// runs in, so commits that only exist on a fork (such as its PR merge commits) can be fetched.
+fn vector_repo_url(server_url: Option<&str>, repository: Option<&str>) -> String {
+    match (server_url, repository) {
+        (Some(server), Some(repo)) => format!("{server}/{repo}.git"),
+        _ => VECTOR_REPO_URL.to_string(),
+    }
+}
+
 /// Generate VRL function documentation by fetching pre-built JSON docs from the VRL and Vector
 /// repositories.
 ///
@@ -70,7 +79,11 @@ impl Cli {
         let vector_docs_dir = if let Some(vector_sha) = &self.vector_sha {
             info!("Vector commit SHA: {vector_sha}");
             let vector_clone_dir = temp_dir.path().join("vector");
-            sparse_checkout_docs(vector_sha, VECTOR_REPO_URL, &vector_clone_dir)?;
+            let repo_url = vector_repo_url(
+                std::env::var("GITHUB_SERVER_URL").ok().as_deref(),
+                std::env::var("GITHUB_REPOSITORY").ok().as_deref(),
+            );
+            sparse_checkout_docs(vector_sha, &repo_url, &vector_clone_dir)?;
             vector_clone_dir.join("docs").join("generated")
         } else {
             repo_root.join("docs").join("generated")
@@ -167,4 +180,30 @@ fn read_function_docs(docs_dir: &Path) -> Result<BTreeMap<String, Value>> {
     }
 
     Ok(functions)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vector_repo_url_uses_ci_repository() {
+        assert_eq!(
+            vector_repo_url(Some("https://github.com"), Some("supabase/vector")),
+            "https://github.com/supabase/vector.git"
+        );
+    }
+
+    #[test]
+    fn vector_repo_url_defaults_to_upstream() {
+        assert_eq!(vector_repo_url(None, None), VECTOR_REPO_URL);
+        assert_eq!(
+            vector_repo_url(Some("https://github.com"), None),
+            VECTOR_REPO_URL
+        );
+        assert_eq!(
+            vector_repo_url(None, Some("supabase/vector")),
+            VECTOR_REPO_URL
+        );
+    }
 }
