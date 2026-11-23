@@ -237,7 +237,7 @@ generated: components: sources: http_server: configuration: {
 				  { "status": 202, "body": encode_json({ "accepted": true }) }
 				}
 				"""]
-			syntax: "remap_program"
+			syntax: "vrl_program"
 		}
 	}
 	strict_path: {

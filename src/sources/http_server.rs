@@ -196,7 +196,7 @@ pub struct SimpleHttpConfig {
         docs::examples = "encode_json({ \"ids\": map_values(.) -> |e| { e.id } })",
         docs::examples = "parsed, err = parse_json(.[0].body)\nif err != null {\n  { \"status\": 400, \"body\": \"invalid JSON\" }\n} else {\n  { \"status\": 202, \"body\": encode_json(parsed), \"headers\": { \"x-request-id\": .[0].request_id } }\n}",
         docs::examples = "row, err = get_enrichment_table_record(\"ip_allowlist\", { \"ip\": .[0].hostname })\nif err != null {\n  abort encode_json({ \"status\": 403, \"body\": \"source address not permitted\" })\n} else {\n  { \"status\": 202, \"body\": encode_json({ \"accepted\": true }) }\n}",
-        docs::syntax_override = "remap_program"
+        docs::syntax_override = "vrl_program"
     ))]
     #[serde(default)]
     response_source: Option<String>,
@@ -1124,7 +1124,7 @@ mod tests {
         // No events should have been forwarded to the sink.
         // Give a brief window for any (erroneous) event to arrive, then assert the stream is empty.
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        let events = collect_ready(rx).await;
+        let events = collect_ready(rx);
         assert!(
             events.is_empty(),
             "abort should suppress event forwarding, but {n} event(s) reached the sink",
@@ -1148,7 +1148,7 @@ mod tests {
         assert_eq!(resp.text().await.unwrap(), "forbidden");
 
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        let events = collect_ready(rx).await;
+        let events = collect_ready(rx);
         assert!(events.is_empty(), "abort must not forward events to sink");
     }
 
@@ -1167,7 +1167,7 @@ mod tests {
         assert_eq!(resp.text().await.unwrap(), "rejected");
 
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        let events = collect_ready(rx).await;
+        let events = collect_ready(rx);
         assert!(events.is_empty(), "abort must not forward events to sink");
     }
 
@@ -1187,7 +1187,7 @@ mod tests {
         assert_eq!(resp.text().await.unwrap(), "rate limited");
 
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        let events = collect_ready(rx).await;
+        let events = collect_ready(rx);
         assert!(events.is_empty(), "abort must not forward events to sink");
     }
 
@@ -1212,7 +1212,7 @@ mod tests {
         assert_eq!(resp.text().await.unwrap(), "wrapped");
 
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        let events = collect_ready(rx).await;
+        let events = collect_ready(rx);
         assert!(events.is_empty(), "abort must not forward events to sink");
     }
 
@@ -1235,7 +1235,7 @@ mod tests {
         assert_eq!(resp.text().await.unwrap(), r#"{"error":"bad request"}"#);
 
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        let events = collect_ready(rx).await;
+        let events = collect_ready(rx);
         assert!(events.is_empty(), "abort must not forward events to sink");
     }
 
@@ -1260,7 +1260,7 @@ mod tests {
         );
 
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        let events = collect_ready(rx).await;
+        let events = collect_ready(rx);
         assert!(events.is_empty(), "abort must not forward events to sink");
     }
 
@@ -1305,7 +1305,7 @@ mod tests {
 
         // No events were forwarded, so the stream should be empty.
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        let events = collect_ready(recv).await;
+        let events = collect_ready(recv);
         assert!(events.is_empty(), "abort must not forward events to sink");
     }
 

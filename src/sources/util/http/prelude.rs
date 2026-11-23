@@ -490,7 +490,7 @@ fn build_vrl_response(
                 },
                 None => warp::http::Response::builder()
                     .status(reject_code)
-                    .body(hyper::Body::empty())
+                    .body(Bytes::new().into())
                     .map_err(|err| {
                         warp::reject::custom(ErrorMessage::new(
                             StatusCode::INTERNAL_SERVER_ERROR,
@@ -499,6 +499,17 @@ fn build_vrl_response(
                     })?,
             };
             Ok(VrlResponseDecision::Reject(response))
+        }
+        // No execution control is attached to this runtime, so an interruption is not expected;
+        // treat it like any other program failure.
+        Err(Terminate::Interrupted) => {
+            emit(HttpInternalError {
+                message: "VRL response program was interrupted",
+            });
+            Err(warp::reject::custom(ErrorMessage::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "VRL response program was interrupted".to_owned(),
+            )))
         }
         Err(Terminate::Error(err)) => {
             emit(HttpInternalError {
@@ -512,7 +523,7 @@ fn build_vrl_response(
         Ok(Value::Bytes(body)) => {
             let response = warp::http::Response::builder()
                 .status(default_status)
-                .body(hyper::Body::from(body))
+                .body(body.into())
                 .map_err(|err| {
                     warp::reject::custom(ErrorMessage::new(
                         StatusCode::INTERNAL_SERVER_ERROR,
@@ -550,7 +561,7 @@ fn build_response_from_vrl_obj(
 ) -> Result<warp::reply::Response, Rejection> {
     let status = obj
         .get("status")
-        .and_then(|v| v.as_integer())
+        .and_then(Value::as_integer)
         .and_then(|n| u16::try_from(n).ok())
         .and_then(|n| StatusCode::from_u16(n).ok())
         .unwrap_or(default_status);
@@ -558,10 +569,10 @@ fn build_response_from_vrl_obj(
     let body = obj
         .get("body")
         .map(|v| match v {
-            Value::Bytes(b) => hyper::Body::from(b.clone()),
-            other => hyper::Body::from(other.to_string()),
+            Value::Bytes(b) => b.clone(),
+            other => Bytes::from(other.to_string()),
         })
-        .unwrap_or_else(hyper::Body::empty);
+        .unwrap_or_default();
 
     let mut builder = warp::http::Response::builder().status(status);
 
@@ -573,7 +584,7 @@ fn build_response_from_vrl_obj(
         }
     }
 
-    builder.body(body).map_err(|err| {
+    builder.body(body.into()).map_err(|err| {
         warp::reject::custom(ErrorMessage::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to build response: {err}"),
@@ -629,7 +640,7 @@ fn build_response_from_json_obj(
 ) -> Result<warp::reply::Response, Rejection> {
     let status = obj
         .get("status")
-        .and_then(|v| v.as_u64())
+        .and_then(JsonValue::as_u64)
         .and_then(|n| u16::try_from(n).ok())
         .and_then(|n| StatusCode::from_u16(n).ok())
         .unwrap_or(default_status);
@@ -637,8 +648,8 @@ fn build_response_from_json_obj(
     let body = obj
         .get("body")
         .and_then(|v| v.as_str())
-        .map(|s| hyper::Body::from(s.to_owned()))
-        .unwrap_or_else(hyper::Body::empty);
+        .map(|s| Bytes::from(s.to_owned()))
+        .unwrap_or_default();
 
     let mut builder = warp::http::Response::builder().status(status);
 
@@ -650,7 +661,7 @@ fn build_response_from_json_obj(
         }
     }
 
-    builder.body(body).map_err(|err| {
+    builder.body(body.into()).map_err(|err| {
         warp::reject::custom(ErrorMessage::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to build reject response: {err}"),
@@ -665,7 +676,7 @@ fn build_plain_reject_response(
 ) -> Result<warp::reply::Response, Rejection> {
     warp::http::Response::builder()
         .status(reject_code)
-        .body(hyper::Body::from(msg))
+        .body(msg.into())
         .map_err(|err| {
             warp::reject::custom(ErrorMessage::new(
                 StatusCode::INTERNAL_SERVER_ERROR,
