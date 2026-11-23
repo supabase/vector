@@ -458,19 +458,6 @@ impl OpentelemetryConfig {
         // as serving, and that is the name a probe sends unless it is told otherwise.
         let (health_reporter, health_service) = health_reporter();
 
-        // Report each OTLP service by name as well, so a probe can target a single signal. The
-        // names come from the generated `NamedService` implementations because a hand-written
-        // string could drift from the routes registered below.
-        for service_name in [
-            <LogsServiceServer<Service> as NamedService>::NAME,
-            <MetricsServiceServer<Service> as NamedService>::NAME,
-            <TraceServiceServer<Service> as NamedService>::NAME,
-        ] {
-            health_reporter
-                .set_service_status(service_name, tonic_health::ServingStatus::Serving)
-                .await;
-        }
-
         let mut builder = RoutesBuilder::default();
         builder
             .add_service(health_service)
@@ -478,7 +465,7 @@ impl OpentelemetryConfig {
             .add_service(metrics_service)
             .add_service(trace_service);
 
-        let grpc_source = run_grpc_server_with_routes(
+        let grpc_server = run_grpc_server_with_routes(
             self.grpc.address,
             grpc_tls_settings,
             grpc_tls_reloader,
@@ -486,7 +473,23 @@ impl OpentelemetryConfig {
             self.grpc.keepalive.clone(),
             cx.shutdown.clone(),
             request_control.grpc_layer(grpc_error_response),
-        )
+        );
+        let grpc_source = async move {
+            // Report each OTLP service by name as well, so a probe can target a single signal.
+            // The names come from the generated `NamedService` implementations because a
+            // hand-written string could drift from the routes registered above. This runs before
+            // the server binds, so a probe never sees the services as unknown.
+            for service_name in [
+                <LogsServiceServer<Service> as NamedService>::NAME,
+                <MetricsServiceServer<Service> as NamedService>::NAME,
+                <TraceServiceServer<Service> as NamedService>::NAME,
+            ] {
+                health_reporter
+                    .set_service_status(service_name, tonic_health::ServingStatus::Serving)
+                    .await;
+            }
+            grpc_server.await
+        }
         .map_err(|error| {
             error!(message = "OpenTelemetry source gRPC server failed.", %error);
         });

@@ -1123,7 +1123,7 @@ mod tests {
             source,
             destination,
             inner,
-            register(BytesReceived::from(Protocol::from("grpc"))),
+            Some(register(BytesReceived::from(Protocol::from("grpc")))),
             None,
         ));
 

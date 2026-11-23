@@ -2361,7 +2361,7 @@ async fn health_checks_are_not_counted_as_received_bytes() {
         .export(create_test_logs_request())
         .await
         .unwrap();
-    let events = test_util::collect_ready(logs_output).await;
+    let events = test_util::collect_ready(logs_output);
     assert_eq!(events.len(), 1);
 
     assert!(received_bytes() > 0.0);
