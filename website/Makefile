@@ -37,9 +37,11 @@ component-examples: generate-vrl-docs
 .PHONY: config-examples
 config-examples: component-examples
 
+# Upstream CI fetches Vector's function docs at GITHUB_SHA from vectordotdev/vector. Other
+# repositories (forks) read the local checkout instead, since their commits are not upstream.
 generate-vrl-docs: setup-vdev
 	$(VDEV) build vrl-docs --output-dir cue/reference/remap/functions \
-		$(if $(findstring true,$(CI)),--vector-sha $(GITHUB_SHA),)
+		$(if $(and $(findstring true,$(CI)),$(filter vectordotdev/vector,$(GITHUB_REPOSITORY))),--vector-sha $(GITHUB_SHA),)
 
 structured-data: generate-vrl-docs component-examples
 
