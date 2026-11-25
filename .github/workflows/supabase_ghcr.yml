@@ -1,7 +1,7 @@
 name: Supabase GHCR Image
 
 # Builds a multi-arch (amd64/arm64) debian image and pushes it to
-# ghcr.io/supabase/vector on every push to master, tagged with the short commit hash.
+# ghcr.io/supabase/vector-fork on every push to master, tagged with the short commit hash.
 
 permissions:
   contents: read
@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE: ghcr.io/supabase/vector
+  IMAGE: ghcr.io/supabase/vector-fork
 
 jobs:
   build:
